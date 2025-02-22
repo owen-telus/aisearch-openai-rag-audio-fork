@@ -80,10 +80,12 @@ class RTMiddleTier:
     async def _process_message_to_client(self, msg: str, client_ws: web.WebSocketResponse, server_ws: web.WebSocketResponse) -> Optional[str]:
         message = json.loads(msg.data)
         updated_message = msg.data
+        # logger.info("Processing message to client Received message: %s", updated_message)
         if message is not None:
             match message["type"]:
                 case "session.created":
                     session = message["session"]
+                    logger.info(f"Session created: {session}")
                     # Hide the instructions, tools and max tokens from clients, if we ever allow client-side 
                     # tools, this will need updating
                     session["instructions"] = ""
@@ -95,30 +97,37 @@ class RTMiddleTier:
 
                 case "response.output_item.added":
                     if "item" in message and message["item"]["type"] == "function_call":
+                        logger.info(f"response.output_item.added: {message["item"]}")
                         updated_message = None
 
                 case "conversation.item.created":
                     if "item" in message and message["item"]["type"] == "function_call":
+                        logger.info(f"conversation.item.created function_call: {message["item"]}")
                         item = message["item"]
                         if item["call_id"] not in self._tools_pending:
                             self._tools_pending[item["call_id"]] = RTToolCall(item["call_id"], message["previous_item_id"])
                         updated_message = None
                     elif "item" in message and message["item"]["type"] == "function_call_output":
+                        logger.info(f"conversation.item.created function_call_output: {message["item"]}")
                         updated_message = None
 
                 case "response.function_call_arguments.delta":
+                    logger.info(f"response.function_call_arguments.delta")
                     updated_message = None
                 
                 case "response.function_call_arguments.done":
+                    logger.info(f"response.function_call_arguments.done")
                     updated_message = None
 
                 case "response.output_item.done":
                     if "item" in message and message["item"]["type"] == "function_call":
+                        logger.info(f"response.output_item.done: {message["item"]}")
                         item = message["item"]
                         tool_call = self._tools_pending[message["item"]["call_id"]]
                         tool = self.tools[item["name"]]
                         args = item["arguments"]
                         result = await tool.target(json.loads(args))
+                        logger.info(f"Tool result: {result}")
                         await server_ws.send_json({
                             "type": "conversation.item.create",
                             "item": {
@@ -139,6 +148,7 @@ class RTMiddleTier:
                         updated_message = None
 
                 case "response.done":
+                    logger.info(f"response.done")
                     if len(self._tools_pending) > 0:
                         self._tools_pending.clear() # Any chance tool calls could be interleaved across different outstanding responses?
                         await server_ws.send_json({
@@ -158,6 +168,7 @@ class RTMiddleTier:
     async def _process_message_to_server(self, msg: str, ws: web.WebSocketResponse) -> Optional[str]:
         message = json.loads(msg.data)
         updated_message = msg.data
+        # logger.info("Processing message to server, Received message: %s", updated_message)
         if message is not None:
             match message["type"]:
                 case "session.update":
@@ -175,6 +186,7 @@ class RTMiddleTier:
                     session["tool_choice"] = "auto" if len(self.tools) > 0 else "none"
                     session["tools"] = [tool.schema for tool in self.tools.values()]
                     updated_message = json.dumps(message)
+                    logger.info("Process message to server sessionn.update message: ")
 
         return updated_message
 
